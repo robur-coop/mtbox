@@ -16,6 +16,8 @@ depends: [
   "ocaml"             {>= "5.1.0"}
   "dune"              {>= "3.13.0"}
   "miou"
+  "notty-miou"
+  "nottui-miou"
   "duration"
   "cmdliner"
 ]
