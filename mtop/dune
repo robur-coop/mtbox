@@ -1,0 +1,14 @@
+(executable
+ (name mtop)
+ (public_name mtbox.mtop)
+ (libraries
+  cmdliner
+  fmt
+  miou
+  miou.unix
+  nottui-miou
+  notty-miou
+  notty-community
+  lwd
+  hdr_histogram
+  miou.runtime_events))

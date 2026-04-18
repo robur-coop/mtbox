@@ -1,0 +1,4 @@
+(executable
+ (name recd)
+ (public_name mtbox.recd)
+ (libraries fmt mtbox.cli miou.unix miou.runtime_events cmdliner duration))
