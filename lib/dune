@@ -1,4 +1,4 @@
 (library
- (name mtbox_cli)
- (public_name mtbox.cli)
- (libraries logs.fmt fmt.tty logs.cli fmt.cli cmdliner))
+ (name mtbox)
+ (public_name mtbox)
+ (libraries unix logs.fmt fmt.tty logs.cli fmt.cli cmdliner))

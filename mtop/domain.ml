@@ -21,9 +21,11 @@ let create uid =
 
 let compare { uid= uid0; _ } { uid= uid1; _ } = Int.compare uid0 uid1
 let window = 2_000_000_000L (* 2s *)
+let now_wall_ns () = Int64.of_float (Unix.gettimeofday () *. 1e9)
+let nn v = if Int64.compare v 0L < 0 then 0L else v
 
 let add t ~ts ~active ~idle =
-  let elt = { ts; active; idle } in
+  let elt = { ts; active= nn active; idle= nn idle } in
   Queue.push elt t.samples;
   let cutoff = Int64.sub ts window in
   while
@@ -45,14 +47,16 @@ let pct t =
     Int64.to_float !active /. Int64.to_float total
   else 0.0
 
-let tick = 100_000_000L (* ~100ms, matches polling interval. *)
-
-let tick t =
-  if (not t.is_active) && Int64.compare t.last_ts 0L > 0 then begin
-    let ts = Int64.add t.last_ts tick in
-    add t ~ts ~active:0L ~idle:tick;
-    t.last_ts <- ts
+let accrue t ~now =
+  if Int64.compare t.last_ts 0L > 0 && Int64.compare now t.last_ts > 0 then begin
+    let delta = Int64.sub now t.last_ts in
+    if t.is_active then add t ~ts:now ~active:delta ~idle:0L
+    else add t ~ts:now ~active:0L ~idle:delta
   end;
+  t.last_ts <- now
+
+let tick ~now t =
+  accrue t ~now;
   t.sparkline.(t.spark mod 60) <- pct t;
   t.spark <- t.spark + 1
 

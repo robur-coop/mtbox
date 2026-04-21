@@ -1,9 +1,16 @@
 let error_msgf fmt = Fmt.kstr (fun msg -> Error (`Msg msg)) fmt
+let inhibit fn = try fn () with _exn -> ()
 
 module Phase = struct
-  type t = Begin | End | Instant
+  type t = Begin | End | Instant | Async_begin | Async_end | Metadata
 
-  let to_char = function Begin -> 'B' | End -> 'E' | Instant -> 'i'
+  let to_char = function
+    | Begin -> 'B'
+    | End -> 'E'
+    | Instant -> 'i'
+    | Async_begin -> 'b'
+    | Async_end -> 'e'
+    | Metadata -> 'M'
 end
 
 module Event = struct
@@ -14,26 +21,32 @@ module Event = struct
     ; ts: float
     ; pid: int
     ; tid: int
+    ; id: string option
     ; args: (string * string) list
   }
 
-  let v ?(cat = "miou") ~ph ~ts ~pid ~tid ?(args = []) name =
-    { name; cat; ph; ts; pid; tid; args }
+  let v ?(cat = "miou") ~ph ~ts ~pid ~tid ?id ?(args = []) name =
+    { name; cat; ph; ts; pid; tid; id; args }
 
   let pp_string ppf str =
     for idx = 0 to String.length str - 1 do
       match str.[idx] with
       | '"' -> Fmt.pf ppf "\\\""
       | '\\' -> Fmt.pf ppf "\\\\"
-      | '\n' -> Fmt.pf ppf "\\\n"
-      | '\r' -> Fmt.pf ppf "\\\r"
-      | '\t' -> Fmt.pf ppf "\\\t"
+      | '\n' -> Fmt.pf ppf "\\\\n"
+      | '\r' -> Fmt.pf ppf "\\\\r"
+      | '\t' -> Fmt.pf ppf "\\\\t"
+      | chr when Char.code chr < 0x20 -> Fmt.pf ppf "\\u%04x" (Char.code chr)
       | chr -> Fmt.pf ppf "%c" chr
     done
 
   let pp_scope ppf = function
     | Phase.Instant -> Fmt.pf ppf {json|,"s":"t"|json}
     | _ -> ()
+
+  let pp_id ppf = function
+    | None -> ()
+    | Some id -> Fmt.pf ppf {json|,"id":"%a"|json} pp_string id
 
   let pp_args ppf = function
     | [] -> ()
@@ -56,9 +69,35 @@ module Event = struct
 
   let pp ppf ev =
     Fmt.pf ppf
-      {json|{"name":"%a","cat":"%a","ph":"%c","ts":%.3f,"pid":%d,"tid":%d%a%a}|json}
+      {json|{"name":"%a","cat":"%a","ph":"%c","ts":%.3f,"pid":%d,"tid":%d%a%a%a}|json}
       pp_string ev.name pp_string ev.cat (Phase.to_char ev.ph) ev.ts ev.pid
-      ev.tid pp_scope ev.ph pp_args ev.args
+      ev.tid pp_scope ev.ph pp_id ev.id pp_args ev.args
+
+  let process_name ~pid =
+    let args = [ ("name", Fmt.str "miou pid %d" pid) ] in
+    {
+      name= "process_name"
+    ; cat= "__metadata"
+    ; ph= Phase.Metadata
+    ; ts= 0.0
+    ; pid
+    ; tid= 0
+    ; id= None
+    ; args
+    }
+
+  let thread_name ~pid ~tid =
+    let args = [ ("name", Fmt.str "Domain %d" tid) ] in
+    {
+      name= "thread_name"
+    ; cat= "__metadata"
+    ; ph= Phase.Metadata
+    ; ts= 0.0
+    ; pid
+    ; tid
+    ; id= None
+    ; args
+    }
 
   let from_runtime_event ~pid ring_id ts (ev : Miou.Trace.event) =
     let ts = ts_of_timestamp ts in
@@ -68,128 +107,181 @@ module Event = struct
         let kind =
           match kind with `Async -> "async" | `Parallel -> "parallel"
         in
-        let name = Fmt.str "spawn:%d" uid in
+        let name = Fmt.str "task:%d" uid in
         let args =
           [
             ("parent", string_of_int parent); ("kind", kind)
           ; ("runner", string_of_int runner)
           ]
         in
-        v ~ph:Phase.Instant ~ts ~pid ~tid ~args name
+        let id = string_of_int uid in
+        [
+          v ~cat:"miou.task" ~ph:Phase.Async_begin ~ts ~pid ~tid ~id ~args name
+        ]
     | Miou.Trace.Spawn_location { uid; filename; line } ->
         let name = Fmt.str "location:%d" uid in
         let cat = "miou.meta" in
         let args = [ ("filename", filename); ("line", string_of_int line) ] in
-        v ~ph:Phase.Instant ~cat ~ts ~pid ~tid ~args name
+        [ v ~ph:Phase.Instant ~cat ~ts ~pid ~tid ~args name ]
     | Miou.Trace.Run_begin uid ->
         let name = Fmt.str "task:%d" uid in
-        v ~ph:Phase.Begin ~ts ~pid ~tid name
+        [ v ~ph:Phase.Begin ~ts ~pid ~tid name ]
     | Miou.Trace.Run_end uid ->
         let name = Fmt.str "task:%d" uid in
-        v ~ph:Phase.End ~ts ~pid ~tid name
+        [ v ~ph:Phase.End ~ts ~pid ~tid name ]
     | Miou.Trace.Run_done uid ->
-        let name = Fmt.str "done:%d" uid in
-        v ~ph:Phase.Instant ~ts ~pid ~tid name
+        let name = Fmt.str "task:%d" uid in
+        let id = string_of_int uid in
+        let done_name = Fmt.str "done:%d" uid in
+        [
+          v ~cat:"miou.task" ~ph:Phase.Async_end ~ts ~pid ~tid ~id name
+        ; v ~ph:Phase.Instant ~ts ~pid ~tid done_name
+        ]
     | Miou.Trace.Cancel uid ->
-        (* TODO(dinosaure): use [Begin]/[End] (with Cancelled)? *)
         let name = Fmt.str "cancel:%d" uid in
-        v ~ph:Phase.Instant ~ts ~pid ~tid name
+        [ v ~ph:Phase.Instant ~ts ~pid ~tid name ]
     | Miou.Trace.Cancelled uid ->
         let name = Fmt.str "cancelled:%d" uid in
-        v ~ph:Phase.Instant ~ts ~pid ~tid name
+        [ v ~ph:Phase.Instant ~ts ~pid ~tid name ]
     | Miou.Trace.Await uid ->
         let name = Fmt.str "await:%d" uid in
-        v ~ph:Phase.Instant ~ts ~pid ~tid name
+        [ v ~ph:Phase.Instant ~ts ~pid ~tid name ]
     | Miou.Trace.Resume uid ->
         let name = Fmt.str "resume:%d" uid in
-        v ~ph:Phase.Instant ~ts ~pid ~tid name
+        [ v ~ph:Phase.Instant ~ts ~pid ~tid name ]
     | Miou.Trace.Yield uid ->
         let name = Fmt.str "yield:%d" uid in
-        v ~ph:Phase.Instant ~ts ~pid ~tid name
+        [ v ~ph:Phase.Instant ~ts ~pid ~tid name ]
     | Miou.Trace.Suspend { uid; name= syscall } ->
-        let name = Fmt.str "suspend:%d" uid in
-        let args = [ ("syscall", syscall) ] in
-        (* TODO(dinosaure): use [b] and [e] (async events)? *)
-        v ~ph:Phase.Begin ~ts ~pid ~tid ~args name
+        let name = Fmt.str "syscall:%s" syscall in
+        let args = [ ("syscall", syscall); ("task", string_of_int uid) ] in
+        let id = string_of_int uid in
+        let cat = "miou.syscall" in
+        [ v ~cat ~ph:Phase.Async_begin ~ts ~pid ~tid ~id ~args name ]
     | Miou.Trace.Continue { uid; name= syscall } ->
-        let name = Fmt.str "unblock:%d" uid in
-        let args = [ ("syscall", syscall) ] in
-        v ~ph:Phase.End ~ts ~pid ~tid ~args name
+        let name = Fmt.str "syscall:%s" syscall in
+        let args = [ ("syscall", syscall); ("task", string_of_int uid) ] in
+        let id = string_of_int uid in
+        let cat = "miou.syscall" in
+        [ v ~cat ~ph:Phase.Async_end ~ts ~pid ~tid ~id ~args name ]
     | Miou.Trace.Attach { ruid; puid } ->
-        let name = Fmt.str "attach:%d" ruid in
+        let name = Fmt.str "resource:%d" ruid in
         let args =
           [ ("task", string_of_int puid); ("resource", string_of_int ruid) ]
         in
+        let id = string_of_int ruid in
         let cat = "miou.resources" in
-        v ~cat ~ph:Phase.Begin ~ts ~pid ~tid ~args name
+        [ v ~cat ~ph:Phase.Async_begin ~ts ~pid ~tid ~id ~args name ]
     | Miou.Trace.Detach { ruid; puid } ->
-        let name = Fmt.str "detach:%d" ruid in
+        let name = Fmt.str "resource:%d" ruid in
         let args =
           [ ("task", string_of_int puid); ("resource", string_of_int ruid) ]
         in
+        let id = string_of_int ruid in
         let cat = "miou.resources" in
-        v ~cat ~ph:Phase.End ~ts ~pid ~tid ~args name
+        [ v ~cat ~ph:Phase.Async_end ~ts ~pid ~tid ~id ~args name ]
     | Miou.Trace.Still_has_children uid ->
         let name = Fmt.str "error:still_has_children:%d" uid in
         let cat = "miou.error" in
-        v ~cat ~ph:Phase.Instant ~ts ~pid ~tid name
+        let args = [ ("task", string_of_int uid) ] in
+        [ v ~cat ~ph:Phase.Instant ~ts ~pid ~tid ~args name ]
     | Miou.Trace.Not_a_child { self; prm } ->
         let name = Fmt.str "error:not_a_child:%d:%d" self prm in
         let cat = "miou.error" in
-        v ~cat ~ph:Phase.Instant ~ts ~pid ~tid name
-    | _ -> failwith "Unhandled event"
+        let args =
+          [ ("task", string_of_int self); ("promise", string_of_int prm) ]
+        in
+        [ v ~cat ~ph:Phase.Instant ~ts ~pid ~tid ~args name ]
+    | Miou.Trace.Resource_leaked uid ->
+        let name = Fmt.str "error:resource_leaked:%d" uid in
+        let cat = "miou.error" in
+        let args = [ ("task", string_of_int uid) ] in
+        [ v ~cat ~ph:Phase.Instant ~ts ~pid ~tid ~args name ]
+    | Miou.Trace.Not_owner { ruid; puid } ->
+        let name = Fmt.str "error:not_owner:%d:%d" ruid puid in
+        let cat = "miou.error" in
+        let args =
+          [ ("task", string_of_int puid); ("resource", string_of_int ruid) ]
+        in
+        [ v ~cat ~ph:Phase.Instant ~ts ~pid ~tid ~args name ]
+    | _ ->
+        let name = "unknown" in
+        let cat = "miou.meta" in
+        [ v ~cat ~ph:Phase.Instant ~ts ~pid ~tid name ]
 end
-
-exception Exit
 
 let poll ?duration stop (path, pid) counter queue =
   let cursor = Runtime_events.create_cursor (Some (path, pid)) in
-  let finally = Runtime_events.free_cursor in
-  let res = Miou.Ownership.create ~finally cursor in
-  Miou.Ownership.own res;
+  let finally () = Runtime_events.free_cursor cursor in
   let cbs = Runtime_events.Callbacks.create () in
+  let seen_tids = Hashtbl.create 16 in
   let fn ring_id ts ev =
-    let ev = Event.from_runtime_event ~pid ring_id ts ev in
-    Atomic.incr counter;
-    Miou.Queue.enqueue queue ev
+    let tid = Event.ring_id_of_domain_id ring_id in
+    if not (Hashtbl.mem seen_tids tid) then begin
+      Hashtbl.add seen_tids tid ();
+      Miou.Queue.enqueue queue (Event.thread_name ~pid ~tid);
+      Atomic.incr counter
+    end;
+    let events = Event.from_runtime_event ~pid ring_id ts ev in
+    let fn ev =
+      Atomic.incr counter;
+      Miou.Queue.enqueue queue ev
+    in
+    List.iter fn events
   in
   let cbs = Miou_runtime_events.add_callbacks ~fn cbs in
   let start = Unix.gettimeofday () in
-  let rec go () =
-    if Atomic.get stop then raise Exit;
-    begin match duration with
-    | Some duration when Unix.gettimeofday () -. start >= duration -> raise Exit
-    | _ -> ()
-    end;
-    let _n = Runtime_events.read_poll cursor cbs (Some 1000) in
-    Miou_unix.sleep 0.01; go ()
+  let loop () =
+    let rec go () =
+      if Atomic.get stop then
+        ignore (Runtime_events.read_poll cursor cbs (Some 1000))
+      else
+        match duration with
+        | Some d when Unix.gettimeofday () -. start >= d -> Atomic.set stop true
+        | _ ->
+            ignore (Runtime_events.read_poll cursor cbs (Some 1000));
+            Miou_unix.sleep 0.01;
+            go ()
+    in
+    go ()
   in
-  go ()
+  Fun.protect ~finally loop
 
-let emit stop output queue =
-  let oc, finally =
+let emit stop pid output queue =
+  let oc, close_oc =
     match output with
     | None -> (stdout, ignore)
-    | Some filepath ->
-        let oc = open_out_bin filepath in
-        let finally = close_out in
-        (oc, finally)
+    | Some filepath -> (open_out_bin filepath, close_out)
   in
-  let finally ppf = Fmt.pf ppf "\n]}\n%!"; finally oc in
   let ppf = Format.formatter_of_out_channel oc in
-  Fmt.pf ppf "{\"traceEvents\":[\n";
-  let res = Miou.Ownership.create ~finally ppf in
-  Miou.Ownership.own res;
-  let rec go () =
-    if Atomic.get stop then raise Exit;
-    let local = Miou.Queue.transfer queue in
-    let events = Miou.Queue.to_list local in
-    List.iter (Event.pp ppf) events;
-    go (Miou.yield ())
+  let first = ref true in
+  let finally () =
+    Fmt.pf ppf "\n]}\n";
+    Format.pp_print_flush ppf ();
+    close_oc oc
   in
-  go ()
+  let body () =
+    Fmt.pf ppf "{\"displayTimeUnit\":\"us\",\"traceEvents\":[\n";
+    let emit_one ev =
+      if !first then first := false else Fmt.pf ppf ",\n";
+      Event.pp ppf ev
+    in
+    emit_one (Event.process_name ~pid);
+    let rec go () =
+      let local = Miou.Queue.transfer queue in
+      List.iter emit_one (Miou.Queue.to_list local);
+      if Atomic.get stop then
+        let local = Miou.Queue.transfer queue in
+        List.iter emit_one (Miou.Queue.to_list local)
+      else begin
+        Miou_unix.sleep 0.05; go ()
+      end
+    in
+    go ()
+  in
+  Fun.protect ~finally body
 
-let run quiet pid output duration runtime_dir =
+let run quiet program output duration runtime_dir =
   let domains = Int.min 1 (Domain.recommended_domain_count () - 1) in
   Miou_unix.run ~domains @@ fun () ->
   let call fn = if domains >= 1 then Miou.call fn else Miou.async fn in
@@ -198,15 +290,45 @@ let run quiet pid output duration runtime_dir =
   let _ = Miou.sys_signal Sys.sigint behavior in
   let counter = Atomic.make 0 in
   let queue = Miou.Queue.create () in
-  let prm0 =
-    call @@ fun () -> poll ?duration stop (runtime_dir, pid) counter queue
+  let prm0, pid =
+    match program with
+    | `Pid pid ->
+        let prm =
+          call @@ fun () -> poll ?duration stop (runtime_dir, pid) counter queue
+        in
+        (prm, pid)
+    | `Exec argv ->
+        let pid = Mtbox.spawn ~runtime_dir argv in
+        let reaped = Atomic.make false in
+        let fn _ =
+          match Unix.waitpid [ Unix.WNOHANG ] pid with
+          | 0, _ -> ()
+          | _, _ -> Atomic.set reaped true; Atomic.set stop true
+          | exception Unix.Unix_error (Unix.ECHILD, _, _) ->
+              Atomic.set reaped true; Atomic.set stop true
+        in
+        let handler = Sys.Signal_handle fn in
+        let prev = Miou.sys_signal Sys.sigchld handler in
+        let prm =
+          call @@ fun () ->
+          let finally () =
+            ignore (Miou.sys_signal Sys.sigchld prev);
+            if not (Atomic.get reaped) then begin
+              inhibit (fun () -> Unix.kill pid Sys.sigterm);
+              inhibit (fun () -> ignore (Unix.waitpid [] pid))
+            end
+          in
+          Fun.protect ~finally @@ fun () ->
+          poll ?duration stop (runtime_dir, pid) counter queue
+        in
+        (prm, pid)
   in
-  let prm1 = Miou.async @@ fun () -> emit stop output queue in
+  let prm1 = Miou.async @@ fun () -> emit stop pid output queue in
   let _ = Miou.await_all [ prm0; prm1 ] in
   if not quiet then Fmt.pr "%d event(s) recorded\n%!" (Atomic.get counter)
 
 open Cmdliner
-open Mtbox_cli
+open Mtbox
 
 let pid =
   let doc = "PID of the target Miou process to trace." in
@@ -263,15 +385,32 @@ let runtime_dir =
   let open Arg in
   value & opt directory temp & info [ "runtime-dir" ] ~env ~doc ~docv:"DIR"
 
-let term =
+let term exec =
   let open Term in
-  const run $ setup_logs $ pid $ output $ duration $ runtime_dir
+  match exec with
+  | Some exec ->
+      const run
+      $ setup_logs
+      $ const (`Exec exec)
+      $ output
+      $ duration
+      $ runtime_dir
+  | None ->
+      const run
+      $ setup_logs
+      $ map (fun pid -> `Pid pid) pid
+      $ output
+      $ duration
+      $ runtime_dir
 
-let cmd =
+let cmd exec =
   let doc =
     "Record Miou runtime events to a Chrome Trace Event Format JSON file."
   in
   let info = Cmd.info "recd" ~doc in
-  Cmd.v info term
+  Cmd.v info (term exec)
 
-let () = Cmd.(exit @@ eval cmd)
+let () =
+  match Mtbox.split_argv Sys.argv with
+  | _argv, [] -> Cmd.(exit @@ eval (cmd None))
+  | argv, exec -> Cmd.(exit @@ eval ~argv (cmd (Some exec)))

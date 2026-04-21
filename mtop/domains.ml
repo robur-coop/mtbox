@@ -12,8 +12,8 @@ let list t =
   let fn _ domain acc = domain :: acc in
   Hashtbl.fold fn t []
 
-let tick t =
-  let fn _ t = Domain.tick t in
+let tick ~now t =
+  let fn _ t = Domain.tick ~now t in
   Hashtbl.iter fn t
 
 open Notty

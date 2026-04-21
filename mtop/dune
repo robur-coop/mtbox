@@ -8,7 +8,7 @@
   miou.unix
   nottui-miou
   notty-miou
-  notty-community
   lwd
   hdr_histogram
-  miou.runtime_events))
+  miou.runtime_events
+  mtbox))

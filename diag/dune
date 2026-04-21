@@ -1,0 +1,4 @@
+(executable
+ (name diag)
+ (public_name mtbox.diag)
+ (libraries cmdliner fmt unix runtime_events miou.runtime_events mtbox))
