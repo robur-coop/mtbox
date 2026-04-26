@@ -1,4 +1,4 @@
-# mtbox, some tools to monitor Miou applications
+# mtbox, some tools to monitor [Miou][miou] applications
 
 `mtbox` is a suite of software tools designed to monitor Miou applications.
 There are three tools:
@@ -8,7 +8,7 @@ There are three tools:
   can be useful for gaining a clear understanding of what a Miou programme is
   doing. This can be useful for identifying potential tasks that never end.
 - `diag`: a tool for understanding the errors that a Miou application may throw
-  if the user does not follow Miou’s rules (in addition, whenever an exception
+  if the user does not follow Miou's rules (in addition, whenever an exception
   such as `Still_has_children` is thrown).
 
 These tools facilitate the debugging of a Miou application and make judicious
@@ -69,7 +69,7 @@ diag: exit (tasks seen=2, lost=0)
 
 <hr />
 
-mtop is an (experimental) application that provides a dynamic view of a Miou
+`mtop` is an (experimental) application that provides a dynamic view of a Miou
 programme. It allows you to monitor task execution and the usage of domains and
 resources. You can see an example by running:
 ```shell
@@ -77,9 +77,10 @@ $ mtbox.mtop -- dune exec ./demo/demo.exe
 ```
 
 You can exit the programme by pressing ESC. The `demo` programme launches
-several tasks as well as an ‘echo’ server (you can follow the tutorial on how
-to implement an echo server with Miou here). The programme also requires at
-least 4 domains. It is simply designed to demonstrate mtop.
+several tasks as well as an 'echo' server (you can follow [the
+tutorial][miou-tutorial] on how to implement an echo server with Miou). The
+programme also requires at least 4 domains. It is simply designed to
+demonstrate `mtop`.
 
 The OCaml runtime events transport is a fixed-size ring buffer as a file,
 bursts of activity can make the target overwrite events faster than `mtop` can
@@ -87,3 +88,15 @@ read them. When that happens, the OCaml runtime reports the number of lost
 events and `mtop` displays a red `LOST N` badge in the status bar. State
 reconstructed after a loss may be briefly out of sync until the next
 authoritative event arrives.
+
+`mtop` was developed using [notty-miou][notty-miou] (as well as [lwd][lwd]) as
+a demonstration of what can be achieved in terms of TUI with Miou. It is a good
+example of a programme that can be written in OCaml, but we would like to warn
+users that it is purely for cosmetic purposes: `recd` and `diag` are more
+interesting and useful than `mtop`.
+
+[miou-tutorial]: https://robur-coop.github.io/miou/echo.html
+[notty-miou]: https://github.com/robur-coop/notty-miou
+[lwd]: https://github.com/let-def/lwd
+[miou]: https://github.com/robur-coop/miou
+[perfetto]: https://perfetto.dev/
