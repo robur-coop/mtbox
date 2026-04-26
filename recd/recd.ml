@@ -233,13 +233,12 @@ let poll ?duration stop (path, pid) counter queue =
   let start = Unix.gettimeofday () in
   let loop () =
     let rec go () =
-      if Atomic.get stop then
-        ignore (Runtime_events.read_poll cursor cbs (Some 1000))
+      if Atomic.get stop then ignore (Runtime_events.read_poll cursor cbs None)
       else
         match duration with
         | Some d when Unix.gettimeofday () -. start >= d -> Atomic.set stop true
         | _ ->
-            ignore (Runtime_events.read_poll cursor cbs (Some 1000));
+            ignore (Runtime_events.read_poll cursor cbs None);
             Miou_unix.sleep 0.01;
             go ()
     in

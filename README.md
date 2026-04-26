@@ -63,6 +63,12 @@ diag: exit (tasks seen=2, lost=0)
 
 ## mtop
 
+<p align="center">
+  <img src="./assets/demo.gif" />
+</p>
+
+<hr />
+
 mtop is an (experimental) application that provides a dynamic view of a Miou
 programme. It allows you to monitor task execution and the usage of domains and
 resources. You can see an example by running:

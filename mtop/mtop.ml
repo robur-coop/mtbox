@@ -49,9 +49,9 @@ let fn g ring_id ts event =
   let ts = Runtime_events.Timestamp.to_int64 ts in
   let wall_ns = Domain.now_wall_ns () in
   g.G.counter <- g.G.counter + 1;
-  (* Events from a runner ring (Run_begin/end/done, Suspend, Continue…) can be
-     read before the Spawn for the same uid on the parent's ring, so we
-     materialise the Task on first sight rather than dropping. Spawn arriving
+  (* Events from a runner ring ([Run_{begin,end,done}, [Suspend], [Continue]...) can be
+     read before the [Spawn] for the same uid on the parent's ring, so we
+     materialise the task on first sight rather than dropping. [Spawn] arriving
      later only fills in identity fields. *)
   let with_task uid f = f (Tree.task g.G.tree uid) in
   match event with
@@ -87,14 +87,14 @@ let fn g ring_id ts event =
       with_task uid @@ fun task ->
       (* Miou emits Suspend (syscall name) followed by an internal Await on
          the trigger; preserve the more informative Suspended state. *)
-      (match task.Task.state with
+      begin match task.Task.state with
       | State.Suspended _ -> ()
-      | _ -> task.Task.state <- State.Awaiting);
+      | _ -> task.Task.state <- State.Awaiting
+      end;
       touch_last task ts
   | Miou.Trace.Resume uid ->
       with_task uid @@ fun task ->
       task.Task.wakes <- task.Task.wakes + 1;
-      ignore ring_id;
       (* Skip state/ready transitions for a stale Resume whose timestamp
          predates the task's most recent ring-local event. *)
       if Int64.compare ts task.Task.last_ts >= 0 then begin
@@ -146,7 +146,7 @@ let fn g ring_id ts event =
       touch_last task ts
   | _ -> ()
 
-(* Closest still-alive uid to [uid] in [prior] — prefer successors, fall
+(* Closest still-alive uid to [uid] in [prior] - prefer successors, fall
    back to predecessors. Used when the selected task gets swept. *)
 let nearest_alive tree uid prior =
   let alive u = Hashtbl.mem tree u in
@@ -163,7 +163,7 @@ let nearest_alive tree uid prior =
   match after prior with Some _ as s -> s | None -> before None prior
 
 (* After a sweep, if the selected uid got evicted, move the cursor to a
-   neighbour and drop out of Detail view if it pointed at that uid. *)
+   neighbour and drop out of [Detail] view if it pointed at that uid. *)
 let reselect_if_evicted (r : G.react) (g : G.t) prior =
   match Lwd.peek r.selected with
   | Some uid when not (Hashtbl.mem g.G.tree uid) -> (
