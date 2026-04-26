@@ -38,16 +38,16 @@ It can be difficult to know where these errors originate, and the `diag` tool
 provides a detailed report if such an exception is raised by your programme.
 Simply add the Miou and OCaml trace system to your programme and run it with
 diag. Here is an example:
-```shell
+```bash
 $ cat >main.ml <<EOF
->let () =
->  Miou.Trace.set_reporter Miou_runtime_events.reporter;
->  Miou_unix.run @@ fun () ->
->  let prm = Miou.async @@ fun () ->
->    let _ = Miou.async ignore in (* <- Error here! *)
->    print_endline "done" in
->  Miou.await_exn prm
->EOF
+> let () =
+>   Miou.Trace.set_reporter Miou_runtime_events.reporter;
+>   Miou_unix.run @@ fun () ->
+>   let prm = Miou.async @@ fun () ->
+>     let _ = Miou.async ignore in (* <- Error here! *)
+>     print_endline "done" in
+>   Miou.await_exn prm
+> EOF
 $ ocamlfind opt -linkpkg -package miou.unix,miou.runtime_events main.ml
 $ mtbox.diag -- ./a.out
 diag: attached to pid=111xxx dir=/tmp
