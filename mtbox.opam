@@ -5,7 +5,6 @@ authors:      "Romain Calascibetta <romain.calascibetta@gmail.com>"
 homepage:     "https://github.com/robur-coop/mtbox"
 bug-reports:  "https://github.com/robur-coop/mtbox/issues"
 dev-repo:     "git+https://github.com/robur-coop/mtbox.git"
-doc:          "https://docs.osau.re/local/miou/"
 license:      "MIT"
 synopsis:     "A set of tools for the Miou scheduler"
 
