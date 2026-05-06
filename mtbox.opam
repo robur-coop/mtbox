@@ -15,10 +15,11 @@ run-test: [ "dune" "runtest" "-p" name "-j" jobs ]
 depends: [
   "ocaml"             {>= "5.1.0"}
   "dune"              {>= "3.13.0"}
-  "miou"
+  "miou"              {>= "0.6.0"}
   "notty-miou"
   "nottui-miou"
   "duration"
   "cmdliner"
+  "hdr_histogram"
 ]
 x-maintenance-intent: [ "(latest)" ]
