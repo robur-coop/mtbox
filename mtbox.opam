@@ -17,6 +17,7 @@ depends: [
   "dune"              {>= "3.13.0"}
   "miou"              {>= "0.6.0"}
   "fmt"
+  "logs"
   "notty-miou"
   "nottui-miou"
   "duration"
