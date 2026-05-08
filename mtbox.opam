@@ -19,8 +19,8 @@ depends: [
   "logs"
   "notty-miou"
   "nottui-miou"
-  "duration"
-  "cmdliner"
+  "duration"          {>= "0.3.0"}
+  "cmdliner"          {>= "2.0.0"}
   "hdr_histogram"
 ]
 x-maintenance-intent: [ "(latest)" ]
