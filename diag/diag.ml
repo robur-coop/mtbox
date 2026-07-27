@@ -23,6 +23,8 @@ type task = {
   ; mutable runner: int
   ; mutable location: (string * int) option
   ; mutable alive: bool
+  ; mutable cancelled: bool
+  ; mutable cleaned: bool
   ; mutable terminal_wall: float
   ; mutable resources: int list
 }
@@ -41,6 +43,8 @@ let get uid =
         ; runner= 0
         ; location= None
         ; alive= true
+        ; cancelled= false
+        ; cleaned= false
         ; terminal_wall= 0.0
         ; resources= []
         }
@@ -79,10 +83,14 @@ let parent_chain uid =
 
 let children_of uid =
   let acc = ref [] in
-  Hashtbl.iter
-    (fun _ t -> if t.parent = uid && t.alive then acc := t :: !acc)
-    tasks;
+  let fn _ t = if t.parent = uid && not t.cleaned then acc := t :: !acc in
+  Hashtbl.iter fn tasks;
   List.sort (fun a b -> Int.compare a.uid b.uid) !acc
+
+let state_to_string t =
+  if t.alive then "running"
+  else if t.cancelled then "cancelled"
+  else "terminated"
 
 let print_report severity name lines =
   let attr = match severity with `Warn -> "WARN" | `Error -> "ERROR" in
@@ -95,8 +103,8 @@ let report_still_has_children uid =
   let kids = children_of uid in
   let kid_lines =
     let fn c =
-      Fmt.str "- child %s (parent=#%d, runner=dom%d)" (short c.uid) c.parent
-        c.runner
+      Fmt.str "- child %s (parent=#%d, runner=dom%d, %s)" (short c.uid) c.parent
+        c.runner (state_to_string c)
     in
     List.map fn kids
   in
@@ -168,7 +176,9 @@ let handle _ring_id _ts (event : Miou.Trace.event) =
       let t = get uid in
       t.parent <- parent;
       t.runner <- runner;
-      t.alive <- true
+      t.alive <- true;
+      t.cancelled <- false;
+      t.cleaned <- false
   | Miou.Trace.Spawn_location { uid; filename; line } ->
       let t = get uid in
       t.location <- Some (filename, line)
@@ -189,7 +199,11 @@ let handle _ring_id _ts (event : Miou.Trace.event) =
   | Miou.Trace.Cancelled uid ->
       let t = get uid in
       t.alive <- false;
+      t.cancelled <- true;
       t.terminal_wall <- Unix.gettimeofday ()
+  | Miou.Trace.Clean { self= _; child } ->
+      let t = get child in
+      t.cleaned <- true
   | Miou.Trace.Still_has_children uid -> report_still_has_children uid
   | Miou.Trace.Not_a_child { self; prm } -> report_not_a_child self prm
   | Miou.Trace.Resource_leaked uid -> report_resource_leaked uid
@@ -203,13 +217,19 @@ let sweep ~grace_s ~max_tasks =
     if t.alive && t.parent >= 0 then Hashtbl.replace referenced t.parent ()
   in
   Hashtbl.iter fn tasks;
+  let parent_is_alive t =
+    match Hashtbl.find_opt tasks t.parent with
+    | Some p -> p.alive
+    | None -> false
+  in
   let doomed = ref [] in
   let fn uid t =
     if
       (not t.alive)
       && t.terminal_wall > 0.0
       && now -. t.terminal_wall > grace_s
-      && not (Hashtbl.mem referenced uid)
+      && (not (Hashtbl.mem referenced uid))
+      && (t.cleaned || not (parent_is_alive t))
     then doomed := uid :: !doomed
   in
   Hashtbl.iter fn tasks;
@@ -243,21 +263,21 @@ let run program runtime_dir quiet =
     | `Pid pid -> (pid, fun () -> ())
     | `Exec argv ->
         let pid = Mtbox.spawn ~runtime_dir argv in
-        let reaped = ref false in
+        let cleaned = ref false in
         let on_sigchld _ =
           match Unix.waitpid [ Unix.WNOHANG ] pid with
           | 0, _ -> ()
           | _, _ ->
-              reaped := true;
+              cleaned := true;
               keep_going := false
           | exception Unix.Unix_error (Unix.ECHILD, _, _) ->
-              reaped := true;
+              cleaned := true;
               keep_going := false
         in
         let prev = Sys.signal Sys.sigchld (Sys.Signal_handle on_sigchld) in
         let cleanup () =
           Sys.set_signal Sys.sigchld prev;
-          if not !reaped then begin
+          if not !cleaned then begin
             inhibit (fun () -> Unix.kill pid Sys.sigterm);
             inhibit (fun () -> ignore (Unix.waitpid [] pid))
           end
