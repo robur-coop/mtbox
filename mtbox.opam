@@ -14,7 +14,7 @@ run-test: [ "dune" "runtest" "-p" name "-j" jobs ]
 depends: [
   "ocaml"             {>= "5.1.0"}
   "dune"              {>= "3.13.0"}
-  "miou"              {>= "0.6.0"}
+  "miou"              {>= "0.8.0"}
   "fmt"
   "logs"
   "notty-miou"

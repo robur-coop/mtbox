@@ -57,7 +57,7 @@ Fatal error: exception Miou.Still_has_children
 [2026-04-21T12:13:44Z] ERROR Still_has_children  
         task #2 main.ml:4 finished while still holding 1 unawaited child (fix: await or cancel every child before returning)
         parent chain: #2
-        - child #3 main.ml:5 (parent=#2, runner=dom0)
+        - child #3 main.ml:5 (parent=#2, runner=dom0, running)
 diag: exit (tasks seen=2, lost=0)
 ```
 
