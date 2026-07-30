@@ -14,7 +14,7 @@ run-test: [ "dune" "runtest" "-p" name "-j" jobs ]
 depends: [
   "ocaml"             {>= "5.1.0"}
   "dune"              {>= "3.13.0"}
-  "miou"              {>= "0.6.0"}
+  "miou"              {>= "0.8.0"}
   "fmt"
   "logs"
   "notty-miou"
@@ -24,6 +24,3 @@ depends: [
   "hdr_histogram"
 ]
 x-maintenance-intent: [ "(latest)" ]
-pin-depends: [
-  [ "miou.dev" "git+https://github.com/robur-coop/miou.git#b6b946a0067a08543fb49e33be2730490ce35e02" ]
-]
