@@ -275,12 +275,15 @@ let run program runtime_dir quiet =
               keep_going := false
         in
         let prev = Sys.signal Sys.sigchld (Sys.Signal_handle on_sigchld) in
+        on_sigchld ();
         let cleanup () =
           Sys.set_signal Sys.sigchld prev;
           if not !cleaned then begin
             inhibit (fun () -> Unix.kill pid Sys.sigterm);
             inhibit (fun () -> ignore (Unix.waitpid [] pid))
-          end
+          end;
+          let ring = Filename.concat runtime_dir (Fmt.str "%d.events" pid) in
+          inhibit (fun () -> Sys.remove ring)
         in
         (pid, cleanup)
   in
