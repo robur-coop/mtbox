@@ -315,7 +315,9 @@ let run quiet program output duration runtime_dir =
             if not (Atomic.get reaped) then begin
               inhibit (fun () -> Unix.kill pid Sys.sigterm);
               inhibit (fun () -> ignore (Unix.waitpid [] pid))
-            end
+            end;
+            let ring = Filename.concat runtime_dir (Fmt.str "%d.events" pid) in
+            inhibit (fun () -> Sys.remove ring)
           in
           Fun.protect ~finally @@ fun () ->
           poll ?duration stop (runtime_dir, pid) counter queue

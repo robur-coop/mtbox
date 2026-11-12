@@ -197,7 +197,9 @@ let run program runtime_dir =
           if not (Atomic.get reaped) then begin
             inhibit (fun () -> Unix.kill pid Sys.sigterm);
             inhibit (fun () -> ignore (Unix.waitpid [] pid))
-          end
+          end;
+          let ring = Filename.concat runtime_dir (Fmt.str "%d.events" pid) in
+          inhibit (fun () -> Sys.remove ring)
         in
         (pid, cleanup)
   in

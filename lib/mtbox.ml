@@ -59,6 +59,7 @@ let spawn ?(stdin = Unix.stdin) ?(stdout = Unix.stdout) ?(stderr = Unix.stderr)
           [|
              "OCAML_RUNTIME_EVENTS_START=1"; "MIOU_TRACE=1"
            ; Fmt.str "OCAML_RUNTIME_EVENTS_DIR=%s" runtime_dir
+           ; "OCAML_RUNTIME_EVENTS_PRESERVE=1"
           |]
           (Unix.environment ())
       in
