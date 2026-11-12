@@ -333,7 +333,7 @@ let pid =
 
 let runtime_dir =
   let doc = "Path to the directory containing runtime_events files." in
-  let env = Cmd.Env.info "OCAML_RUNTIME_EVENT_DIR" ~doc in
+  let env = Cmd.Env.info "OCAML_RUNTIME_EVENTS_DIR" ~doc in
   let directory =
     let parser = function
       | str when Sys.file_exists str && Sys.is_directory str -> Ok str
